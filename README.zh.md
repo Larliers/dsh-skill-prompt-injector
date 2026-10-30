@@ -1,8 +1,8 @@
 # dsh-skill-prompt-injector
 
-**在 DeepSeek Harness 右侧栏里搜索、收藏、组合 Skill 与提示词，一键追加到当前对话输入框。**
+[English](README.en.md) | **中文**
 
-[English](README.md)
+**在 DeepSeek Harness 右侧栏里搜索、收藏、组合 Skill 与提示词，一键追加到当前对话输入框。**
 
 ![技能与快捷提示面板](docs/screenshot.png)
 

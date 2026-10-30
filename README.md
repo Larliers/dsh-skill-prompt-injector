@@ -1,8 +1,8 @@
 # dsh-skill-prompt-injector
 
-**Search, pin, combine and inject skills & prompts into the current conversation — from the DSH right sidebar.**
+**English** | [中文](README.zh.md)
 
-[中文说明](README.zh.md)
+**Search, pin, combine and inject skills & prompts into the current conversation — from the DSH right sidebar.**
 
 ![Skills & prompts injector](docs/screenshot.png)
 
