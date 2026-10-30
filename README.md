@@ -23,16 +23,20 @@
 
 ## Install
 
-The prebuilt `lib/` artifacts are committed, so installing needs no build step.
+From the npm registry — recommended, the package ships prebuilt `lib/`, so there is nothing to clone or build:
+
+```powershell
+dsh plugin --profile <profile> add dsh-skill-prompt-injector
+```
+
+Or from source:
 
 ```powershell
 git clone https://github.com/Larliers/dsh-skill-prompt-injector.git
 dsh plugin --profile <profile> add link:<absolute-path-to-clone>
 ```
 
-Or open **Plugins** in DSH and install the package directory as a local bundle.
-
-Restart DSH afterwards so both the Host and the Client side load the new artifacts.
+Either way, restart DSH afterwards so both the Host and the Client side load the new artifacts.
 
 ## Usage
 

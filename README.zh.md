@@ -23,16 +23,20 @@
 
 ## 安装
 
-预构建产物 `lib/` 已随仓库提交，安装时无需再构建。
+从 npm 安装（推荐，包内已带预构建的 `lib/`，无需克隆和构建）：
+
+```powershell
+dsh plugin --profile <profile> add dsh-skill-prompt-injector
+```
+
+或者从源码安装：
 
 ```powershell
 git clone https://github.com/Larliers/dsh-skill-prompt-injector.git
 dsh plugin --profile <profile> add link:<克隆目录的绝对路径>
 ```
 
-也可以在 DSH 打开 **插件**，把包目录作为本地 bundle 安装。
-
-安装后正常退出并重启 DSH，让 Host 与 Client 两侧同时加载新产物。
+两种方式安装后都要正常退出并重启 DSH，让 Host 与 Client 两侧同时加载新产物。
 
 ## 使用
 
