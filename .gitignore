@@ -1,0 +1,10 @@
+node_modules/
+.cache/
+data/*.json
+data/*.bak
+data/*.tmp
+!data/.gitkeep
+*.log
+.DS_Store
+*.vbs
+scripts/install.ps1
