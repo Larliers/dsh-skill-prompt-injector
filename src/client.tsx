@@ -178,19 +178,23 @@ function mount(ctx: Context) {
         {!editor && view.tab === 'skills' && <>
           <p className="sd-hint">当前会话可用 · {visibleSkills.length} 项</p>
           {!visibleSkills.length && <p className="sd-empty">{loading ? '正在读取 Skill…' : catalogError ? '暂时无法读取 Skill，请刷新。' : skills.length ? '没有匹配的 Skill，试试清除筛选。' : '当前会话没有可调用的 Skill。'}</p>}
+          <div className="sd-grid">
           {visibleSkills.map(s => { const meta = skillMeta(s); const ref = skillRef(s); return <article className="sd-card" key={s.id} data-selected={selected.has(refKey(ref))}>
             <div className="sd-card-head"><div className="sd-choice"><Checkbox checked={selected.has(refKey(ref))} disabled={busy} onChange={() => toggle(ref)} label={s.name}/></div><Button size="sm" aria-label={`${meta.favorite ? '取消收藏' : '收藏'} ${s.name}`} aria-pressed={meta.favorite} disabled={locked} onClick={() => run(async () => { if (library) await change({ type: 'skill.meta', revision: library.library.revision, meta: { ...meta, favorite: !meta.favorite } }); })}>{meta.favorite ? '★' : '☆'}</Button></div>
             <p className="sd-desc">{s.description || '暂无描述'}</p><div className="sd-tags">{meta.tags.map(t => <span key={t} className="sd-tag">{t}</span>)}</div>
             <details><summary>详情</summary><div className="sd-detail">{s.description}{s.whenToUse && <p>{s.whenToUse}</p>}<p>来源：{s.origin}</p>{s.path && <p>{s.path}</p>}<div className="sd-row"><Button size="sm" disabled={locked} onClick={() => setEditor({ kind: 'tags', skill: s })}>编辑标签</Button>{s.path && <Button size="sm" onClick={() => ctx.sidebarRight.openResource(`dsh-resource://file/session/${encodeURIComponent(props.sessionId)}/${s.path!.split('/').map(p => encodeURIComponent(p).replace(/%3A/gi, ':')).join('/')}`)}>打开 SKILL.md</Button>}</div></div></details>
           </article>; })}
+          </div>
         </>}
         {!editor && view.tab === 'prompts' && <>
           <p className="sd-hint">本地 Prompt · {visiblePrompts.length} 项</p>
           {!visiblePrompts.length && <p className="sd-empty">{loading ? '正在读取 Prompt…' : prompts.length ? '没有匹配的 Prompt，试试清除筛选。' : '还没有 Prompt，点击“＋新建”保存常用文本。'}</p>}
+          <div className="sd-grid">
           {visiblePrompts.map(p => { const ref = promptRef(p); return <article className="sd-card" key={p.id} data-selected={selected.has(refKey(ref))}>
             <div className="sd-card-head"><div className="sd-choice"><Checkbox checked={selected.has(refKey(ref))} disabled={busy} onChange={() => toggle(ref)} label={p.title}/></div><Button size="sm" aria-label={`${p.favorite ? '取消收藏' : '收藏'} ${p.title}`} aria-pressed={p.favorite} disabled={locked} onClick={() => run(async () => { if (library) await change({ type: 'prompt.save', revision: library.prompts.revision, prompt: { ...p, favorite: !p.favorite } }); })}>{p.favorite ? '★' : '☆'}</Button></div>
             <p className="sd-desc">{p.body}</p><div className="sd-tags">{p.tags.map(t => <span key={t} className="sd-tag">{t}</span>)}</div><div className="sd-card-actions"><details><summary>全文</summary><div className="sd-detail">{p.body}</div></details><div className="sd-row"><Button size="sm" disabled={locked} onClick={() => setEditor({ kind: 'prompt', prompt: p })}>编辑</Button><Button size="sm" disabled={locked} onClick={() => setEditor({ kind: 'delete', type: 'prompt', item: p })}>删除</Button></div></div>
           </article>; })}
+          </div>
         </>}
       </main>
       {notice && <p className="sd-notice" role={notice.error ? 'alert' : 'status'} data-error={notice.error}>{notice.text}</p>}

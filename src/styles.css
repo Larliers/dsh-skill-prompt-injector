@@ -14,6 +14,8 @@
 .sd-toolbar select,.sd-field select { flex:1 1 90px; width:0; min-width:80px; max-width:100%; border:1px solid var(--sd-line); background:var(--sd-bg); color:inherit; border-radius:8px; padding:5px 8px; }
 .sd-toolbar .sd-combos { flex:1 1 86px; }
 .sd-main { flex:1 1 0; min-height:0; min-width:0; overflow:auto; overscroll-behavior:contain; padding:10px 12px; scrollbar-gutter:stable; }
+.sd-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,250px),1fr)); gap:8px; align-items:start; }
+.sd-grid .sd-card { margin-bottom:0; }
 .sd-card { padding:10px; border:1px solid var(--sd-line); border-radius:10px; margin-bottom:8px; min-width:0; }
 .sd-card[data-selected=true] { border-color:var(--sd-accent); background:color-mix(in srgb,var(--sd-accent) 5%,var(--sd-bg)); }
 .sd-card-head { display:flex; align-items:flex-start; gap:6px; min-width:0; }
