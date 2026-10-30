@@ -23,7 +23,7 @@ export class DashboardService extends TypertRemoteService {
   readonly storage: JsonStorage;
   constructor(ctx: Context, config: Config) { super(ctx, 'skillDashboard'); this.storage = new JsonStorage(resolve(config.dataDirectory)); }
   @Remote
-  async health() { return { version: '0.1.0' }; }
+  async health() { return { version: '0.1.1' }; }
   @Remote
   async read() { return this.storage.load(); }
   @Remote

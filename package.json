@@ -1,6 +1,6 @@
 {
   "name": "dsh-skill-prompt-injector",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Search, pin, combine and inject skills and prompts into the current conversation from the DSH right sidebar.",
   "icon": "assets/icon.svg",
   "type": "module",
