@@ -11,8 +11,8 @@ test('无 config 的标准 Cordis 安装可以启动，Prompt 服务不依赖 Sk
   try {
     const service = ctx.get('skillDashboard');
     assert.ok(service, '默认安装必须提供宿主 Remote 服务');
-    assert.deepEqual(await service.health(), { version: '0.1.0' });
-    assert.ok(service.storage.directory.endsWith('data'));
+    assert.deepEqual(await service.health(), { version: '0.2.0', systemPrompt: false });
+    assert.ok(service.storage.directory.endsWith('skill-prompt-injector'), '默认目录落在 $DSH_HOME 下，而不是包内');
     await assert.rejects(service.catalog({ sessionId: 'qa' }), /会话目录服务尚未就绪/);
   } finally { await fiber.dispose(); await registry.dispose(); }
 });

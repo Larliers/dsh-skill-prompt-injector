@@ -6,10 +6,11 @@ export const PACKAGE = 'dsh-skill-prompt-injector';
 const codec = <T extends z.ZodType>(schema: T) => ({ mode: 'strict' as const, typeSymbol: `${PACKAGE}#value`, create: () => schema, jsonSchema: z.toJSONSchema(schema) });
 export const sessionRequestSchema = z.object({ sessionId: z.string().min(1) }).strict();
 function parameter<T extends z.ZodType>(schema: T) { const value = codec(schema); return { name: 'request', source: 'json' as const, codec: value, strictCodec: value }; }
+export const healthSchema = z.object({ version: z.string(), systemPrompt: z.boolean() });
 export const remoteInfo = createTypertRemoteInfo({ package: PACKAGE, methods: {
   'skillDashboard/health': {
     service: 'skillDashboard', invocation: { kind: 'direct' }, parameters: [],
-    result: codec(z.object({ version: z.string() })),
+    result: codec(healthSchema),
   },
   'skillDashboard/read': { service: 'skillDashboard', invocation: { kind: 'direct' }, parameters: [], result: codec(stateSchema) },
   'skillDashboard/change': { service: 'skillDashboard', invocation: { kind: 'direct' }, parameters: [parameter(changeSchema)], result: codec(stateSchema) },
@@ -18,6 +19,7 @@ export const remoteInfo = createTypertRemoteInfo({ package: PACKAGE, methods: {
 
 type Result<T> = { ok: true; value: T } | { ok: false; error: { message: string; code: string } };
 export interface DashboardRemote {
+  health(): Promise<Result<z.infer<typeof healthSchema>>>;
   read(): Promise<Result<z.infer<typeof stateSchema>>>;
   change(request: z.infer<typeof changeSchema>): Promise<Result<z.infer<typeof stateSchema>>>;
   catalog(request: z.infer<typeof sessionRequestSchema>, signal?: AbortSignal): Promise<Result<z.infer<typeof catalogSchema>>>;

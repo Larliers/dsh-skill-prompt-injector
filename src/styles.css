@@ -50,6 +50,9 @@
 .sd-editor-actions { justify-content:flex-end; }
 .sd-combination { border-bottom:1px solid var(--sd-line); padding:10px 0; overflow-wrap:anywhere; }
 .sd-combination h4 { margin:0 0 4px; }
+.sd-global-head { align-items:center; justify-content:space-between; gap:8px; }
+.sd-reason { margin:0; }
+.sd-pre { white-space:pre-wrap; overflow-wrap:anywhere; margin:0; max-height:320px; overflow:auto; font:inherit; }
 .sd[data-short=true] .sd-header { padding:6px 10px; }
 .sd[data-short=true] .sd-tabs { margin:5px 0; }
 .sd[data-short=true] .sd-search { margin-bottom:4px; }

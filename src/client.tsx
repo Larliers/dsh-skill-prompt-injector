@@ -8,7 +8,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client';
 import type {} from '@deepseek-ai/dsh-plugin-manager';
 import { Button, Checkbox, Input } from '@deepseek-ai/dsh-client-ui-primitives';
 import { PACKAGE, remoteInfo, unwrap, type DashboardRemote } from './remote.js';
-import { changeSchema, draftEnd, itemLabel, parseTags, promptRef, promptSchema, refKey, reorder, resolveItems, skillRef, textToAppend, type Catalog, type Change, type Combination, type ItemRef, type Prompt, type Skill } from './model.js';
+import { changeSchema, draftEnd, itemLabel, missingRefs, parseTags, promptRef, promptSchema, refKey, reorder, resolveGlobal, resolveItems, skillRef, textToAppend, type Catalog, type Change, type Combination, type GlobalConfig, type ItemRef, type Prompt, type Skill } from './model.js';
 import { createClientState, type ViewState } from './client-state.js';
 import css from './styles.css';
 
@@ -39,6 +39,7 @@ function mount(ctx: Context) {
     const [catalog, setCatalog] = useState<Catalog>({ skills: [], complete: true });
     const [catalogError, setCatalogError] = useState('');
     const [dataError, setDataError] = useState('');
+    const [globalReady, setGlobalReady] = useState(true);
     const [loading, setLoading] = useState(true);
     const [busy, setBusy] = useState(false);
     const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
@@ -83,10 +84,12 @@ function mount(ctx: Context) {
       Promise.allSettled([
         remote.catalog({ sessionId: props.sessionId }, abort.signal).then(unwrap),
         remote.read().then(unwrap),
-      ]).then(([skills, data]) => {
+        remote.health().then(unwrap),
+      ]).then(([skills, data, health]) => {
         if (!active) return;
         if (skills.status === 'fulfilled') { setCatalog(skills.value); setCatalogError(''); } else setCatalogError(message(skills.reason));
         if (data.status === 'fulfilled') { client.library.set(data.value); setDataError(''); } else setDataError(message(data.reason));
+        setGlobalReady(health.status === 'fulfilled' ? health.value.systemPrompt : false);
         setLoading(false);
       });
       return () => { active = false; abort.abort(); };
@@ -107,21 +110,30 @@ function mount(ctx: Context) {
       const items = store.getSnapshot().items;
       update({ items: items.some(i => refKey(i) === refKey(ref)) ? items.filter(i => refKey(i) !== refKey(ref)) : [...items, ref] });
     }
+    const phaseLabel = (value: string) => value === 'submitting' ? '正在提交' : value === 'claimed' ? '正在处理命令' : value === 'adjudicating' ? '正在解析指令' : '正忙';
     async function injectItems() {
       const selected = [...store.getSnapshot().items];
-      const binding = ctx.sessions.binding(props.sessionId);
+      const target = ctx.sessions.binding(props.sessionId);
       const gen = generation.current;
       await run(async () => {
-        if (!binding || !selected.length) throw new Error('请先选择要填入的条目');
-        const [current, currentCatalog] = await Promise.all([loadData(), remote.catalog({ sessionId: props.sessionId }).then(unwrap)]);
-        if (ctx.sidebarRight.mounted.getSnapshot() !== props.sessionId || ctx.sessions.binding(props.sessionId) !== binding || gen !== generation.current) throw new Error('会话或可用 Skill 已变化，本次未填入，请在目标会话重试');
+        if (!target || !selected.length) throw new Error('请先选择要填入的条目');
+        if (catalogError && selected.some(ref => ref.kind === 'skill')) throw new Error(`Skill 目录读取失败（${catalogError}），当前只能注入 Prompt；请刷新后重试`);
+        const [current, currentCatalog] = await Promise.all([loadData(), catalogError ? Promise.resolve({ skills: [], complete: false }) : remote.catalog({ sessionId: props.sessionId }).then(unwrap)]);
+        if (ctx.sessions.binding(props.sessionId) !== target || gen !== generation.current) throw new Error('会话已切换，本次未填入，请在目标会话重试');
         setCatalog(currentCatalog);
         const resolved = resolveItems(selected, current, currentCatalog.skills);
         if (resolved.missing.length) throw new Error(`有 ${resolved.missing.length} 个条目已删除或当前不可用，请移除或替换红色缺项`);
-        const input = ctx.conversation.input.for(binding.ctx).state.getSnapshot();
+        const read = () => ctx.conversation.input.for(target.ctx).state.getSnapshot();
+        const input = read();
+        if (input.phase !== 'plain') throw new Error(`输入框${phaseLabel(input.phase)}，请等这次提交结束后再试`);
         const end = draftEnd(input);
         const ok = props.inputActions.insertText(textToAppend(input.draft, resolved.text), { start: end, end, draftRev: input.draftRev });
-        if (!ok) throw new Error('草稿已变化或输入框被锁定，本次未填入，请重试');
+        if (!ok) {
+          const after = read();
+          throw new Error(after.draftRev !== input.draftRev ? '草稿在写入前被改动，本次未填入，请重试' : after.phase !== 'plain' ? `输入框${phaseLabel(after.phase)}，本次未填入，请稍后再试` : '输入框拒绝了这次写入，请重试');
+        }
+        const landed = read();
+        if (!landed.draft.includes(resolved.text.split('\n')[0] ?? '')) throw new Error('已尝试写入，但内容没有落到目标会话输入框，请重试');
         update({ items: [], combinationId: undefined });
         try { props.inputActions.persistDraft(); } catch { announce('已填入输入框，但草稿持久化失败，请保持当前窗口', true); return; }
         announce(`已追加 ${selected.length} 项到输入框，请检查后手动发送`);
@@ -130,17 +142,49 @@ function mount(ctx: Context) {
     const skills = catalog.skills;
     const prompts = library?.prompts.prompts ?? [];
     const skillMeta = (s: Skill) => library?.library.skillMeta.find(m => m.id === s.id) ?? { id: s.id, name: s.name, tags: [], favorite: false };
-    const missing = new Set(library ? resolveItems(view.items, library, skills).missing.map(refKey) : []);
+    const globalConfig = library?.library.global;
+    const globalView = library ? resolveGlobal(library) : { entries: [] as ReturnType<typeof resolveGlobal>['entries'], missing: [] as ItemRef[], text: '' };
+    // Skill 目录读取失败时只把"Prompt 缺失"算缺项：Skill 一律在注入时报目录不可用，不把整块界面变成红色。
+    const missing = new Set(library ? missingRefs(view.items, library, skills, { catalogFailed: !!catalogError }).map(refKey) : []);
     const matches = (name: string, description: string, tags: string[], favorite: boolean) => (!view.favorites || favorite) && (!view.tag || tags.includes(view.tag)) && `${name}\n${description}\n${tags.join(' ')}`.toLocaleLowerCase().includes(view.query.trim().toLocaleLowerCase());
     const visibleSkills = skills.filter(s => { const m = skillMeta(s); return matches(s.name, s.description, m.tags, m.favorite); });
     const visiblePrompts = prompts.filter(p => matches(p.title, p.body, p.tags, p.favorite));
-    const allTags = [...new Set(view.tab === 'skills' ? skills.flatMap(s => skillMeta(s).tags) : prompts.flatMap(p => p.tags))].sort((a,b) => a.localeCompare(b, 'zh'));
+    const allTags = [...new Set(view.tab === 'skills' ? skills.flatMap(s => skillMeta(s).tags) : view.tab === 'prompts' ? prompts.flatMap(p => p.tags) : [])].sort((a,b) => a.localeCompare(b, 'zh'));
     const selected = new Set(view.items.map(refKey));
     const collapsed = view.collapsed || height < 280;
     const locked = busy || !!dataError || !library;
     const combination = library?.library.combinations.find(c => c.id === view.combinationId);
     const move = (from: number, to: number) => { if (!busy) update({ items: reorder(store.getSnapshot().items, from, to) }); };
     const closeEditor = () => setEditor(null);
+    // 按钮能不能点，以及点不了时的原因；原因会显示在按钮下方，不再只是灰着。
+    const disabledReason = busy ? '正在处理上一条操作…'
+      : dataError ? '本地数据读取失败，请点右上角刷新重试'
+      : !library ? '正在读取本地数据…'
+      : !view.items.length ? '先在列表里勾选条目'
+      : missing.size ? `有 ${missing.size} 个缺项，请先移除或替换`
+      : '';
+    async function saveGlobal(next: GlobalConfig) {
+      if (!library) return;
+      await run(async () => { await change({ type: 'global.save', revision: library.library.revision, global: next }); });
+    }
+    async function setGlobalItems() {
+      const chosen = [...store.getSnapshot().items];
+      if (!library || !globalConfig || !chosen.length) return;
+      const items = [...globalConfig.items];
+      const skillFacts = { ...globalConfig.skillFacts };
+      for (const ref of chosen) {
+        if (!items.some(existing => refKey(existing) === refKey(ref))) items.push(ref);
+        if (ref.kind === 'skill') {
+          const skill = skills.find(candidate => candidate.id === ref.id);
+          if (skill) skillFacts[ref.id] = { description: skill.description, ...(skill.path ? { path: skill.path } : {}) };
+        }
+      }
+      const ok = await run(async () => { await change({ type: 'global.save', revision: library.library.revision, global: { ...globalConfig, items, skillFacts } }); announce(`已加入全局注入（共 ${items.length} 项）`); });
+      if (ok) update({ items: [], combinationId: undefined });
+    }
+    const moveGlobal = (from: number, to: number) => { if (globalConfig && !busy) void saveGlobal({ ...globalConfig, items: reorder(globalConfig.items, from, to) }); };
+    const removeGlobal = (index: number) => { if (globalConfig && !busy) void saveGlobal({ ...globalConfig, items: globalConfig.items.filter((_, n) => n !== index) }); };
+    const toggleGlobal = async () => { if (!globalConfig) return; await run(async () => { await change({ type: 'global.save', revision: library!.library.revision, global: { ...globalConfig, enabled: !globalConfig.enabled } }); announce(globalConfig.enabled ? '已停用全局注入' : '已启用全局注入'); }); };
 
     return <div ref={root} className="sd" data-skill-dashboard data-short={height < 440}>
       <header className="sd-header">
@@ -148,14 +192,15 @@ function mount(ctx: Context) {
         <div className="sd-tabs" role="tablist" aria-label="条目类型">
           <Button size="sm" role="tab" aria-selected={view.tab === 'skills'} onClick={() => { update({ tab: 'skills', tag: '' }); closeEditor(); }}>Skills · {skills.length}</Button>
           <Button size="sm" role="tab" aria-selected={view.tab === 'prompts'} onClick={() => { update({ tab: 'prompts', tag: '' }); closeEditor(); }}>Prompts · {prompts.length}</Button>
+          <Button size="sm" role="tab" aria-selected={view.tab === 'global'} onClick={() => { update({ tab: 'global', tag: '' }); closeEditor(); }}>全局 · {globalConfig?.items.length ?? 0}</Button>
         </div>
-        <Input className="sd-search" aria-label="搜索名称、描述或标签" placeholder="搜索名称、描述、标签…" type="search" value={view.query} onChange={e => update({ query: e.target.value })}/>
-        <div className="sd-row sd-toolbar">
+        {view.tab !== 'global' && <Input className="sd-search" aria-label="搜索名称、描述或标签" placeholder="搜索名称、描述、标签…" type="search" value={view.query} onChange={e => update({ query: e.target.value })}/>}
+        {view.tab !== 'global' && <div className="sd-row sd-toolbar">
           <Button size="sm" aria-pressed={view.favorites} onClick={() => update({ favorites: !view.favorites })}>{view.favorites ? '★' : '☆'} 收藏</Button>
           <select aria-label="标签筛选" value={view.tag} onChange={e => update({ tag: e.target.value })}><option value="">全部标签</option>{allTags.map(t => <option key={t}>{t}</option>)}</select>
           <Button className="sd-combos" size="sm" aria-expanded={editor?.kind === 'combinations'} disabled={!library} onClick={() => setEditor(editor?.kind === 'combinations' ? null : { kind: 'combinations' })}>组合 ▾</Button>
           {view.tab === 'prompts' && <Button size="sm" disabled={locked} onClick={() => setEditor({ kind: 'prompt' })}>＋新建</Button>}
-        </div>
+        </div>}
       </header>
       {dataError && <p className="sd-notice" role="alert" data-error>{dataError}</p>}
       {catalogError && <p className="sd-notice" role="alert" data-error>Skill 读取失败：{catalogError}，请刷新重试</p>}
@@ -196,14 +241,30 @@ function mount(ctx: Context) {
           </article>; })}
           </div>
         </>}
+        {!editor && view.tab === 'global' && <>
+          <div className="sd-row sd-global-head">
+            <Button size="sm" aria-pressed={globalConfig?.enabled ?? false} disabled={locked || !globalConfig || !globalReady} onClick={toggleGlobal}>{globalConfig?.enabled ? '全局注入已启用' : '全局注入已停用'}</Button>
+            <span className="sd-hint">{globalView.text ? `${globalView.text.length} 字符` : '当前为空，不会进入系统提示'}</span>
+          </div>
+          <p className="sd-hint">每次模型请求都会带着这些内容，对所有对话生效；改完即时生效。</p>
+          {!globalReady && <p className="sd-notice" data-error>当前 DSH 组合没有提供系统提示服务，全局注入不会生效。</p>}
+          {globalView.text.length > 20000 && <p className="sd-notice" data-error>全局注入已 {globalView.text.length} 字符，会明显占用每个对话的上下文。</p>}
+          {!globalView.entries.length && <p className="sd-empty">还没有全局条目。在 Skills 或 Prompts 里勾选后，点下方「设为全局」。</p>}
+          {globalView.entries.length > 0 && <ol className="sd-tray-list" aria-label="全局注入条目">{globalView.entries.map((entry, i) => <li key={refKey(entry.ref)} className="sd-tray-item" data-missing={entry.missing !== null}>
+            <span className="sd-tray-label">{i + 1}. {entry.ref.kind === 'skill' ? 'Skill' : 'Prompt'}：{entry.label}{entry.missing === 'prompt' && <small>（已删除，会被跳过）</small>}{entry.missing === 'skill' && <small>（没有描述快照，只写名称）</small>}</span>
+            <div className="sd-order"><Button size="sm" aria-label={`上移第 ${i + 1} 项`} disabled={locked || i === 0} onClick={() => moveGlobal(i, i - 1)}>↑</Button><Button size="sm" aria-label={`下移第 ${i + 1} 项`} disabled={locked || i === globalView.entries.length - 1} onClick={() => moveGlobal(i, i + 1)}>↓</Button><Button size="sm" aria-label={`从全局移除第 ${i + 1} 项`} disabled={locked} onClick={() => removeGlobal(i)}>×</Button></div>
+          </li>)}</ol>}
+          {!!globalView.text && <details><summary>预览写入系统提示的文本</summary><pre className="sd-detail sd-pre">{globalView.text}</pre></details>}
+        </>}
       </main>
       {notice && <p className="sd-notice" role={notice.error ? 'alert' : 'status'} data-error={notice.error}>{notice.text}</p>}
       <footer className="sd-footer">
-        <div className="sd-row sd-tray-head"><strong>已选 {view.items.length} 项</strong><div className="sd-row"><Button size="sm" disabled={locked || !view.items.length} onClick={() => setEditor({ kind: 'combination' })}>保存组合</Button>{combination && <Button size="sm" disabled={locked || !view.items.length} onClick={() => setEditor({ kind: 'combination', combination })}>覆盖</Button>}<Button size="sm" disabled={busy || !view.items.length} onClick={() => update({ items: [], combinationId: undefined })}>清空</Button><Button size="sm" aria-label={collapsed ? '展开已选条目' : '收起已选条目'} aria-expanded={!collapsed} onClick={() => update({ collapsed: !view.collapsed })}>{collapsed ? '▴' : '▾'}</Button></div></div>
+        <div className="sd-row sd-tray-head"><strong>已选 {view.items.length} 项</strong><div className="sd-row">{view.tab !== 'global' && <Button size="sm" disabled={locked || !view.items.length} onClick={setGlobalItems}>设为全局</Button>}<Button size="sm" disabled={locked || !view.items.length} onClick={() => setEditor({ kind: 'combination' })}>保存组合</Button>{combination && <Button size="sm" disabled={locked || !view.items.length} onClick={() => setEditor({ kind: 'combination', combination })}>覆盖</Button>}<Button size="sm" disabled={busy || !view.items.length} onClick={() => update({ items: [], combinationId: undefined })}>清空</Button><Button size="sm" aria-label={collapsed ? '展开已选条目' : '收起已选条目'} aria-expanded={!collapsed} onClick={() => update({ collapsed: !view.collapsed })}>{collapsed ? '▴' : '▾'}</Button></div></div>
         {!collapsed && view.items.length > 0 && <ol className="sd-tray-list" aria-label="已选条目，按填入顺序排列">{view.items.map((ref, i) => <li key={refKey(ref)} className="sd-tray-item" data-missing={missing.has(refKey(ref))} data-drop={dragOver === i} onDragOver={e => { if (busy || drag.current < 0) return; e.preventDefault(); setDragOver(i); }} onDrop={e => { e.preventDefault(); move(drag.current, i); drag.current = -1; setDragOver(null); }}>
           <span className="sd-drag" draggable={!busy} title="拖动排序，也可使用上移、下移按钮" onDragStart={e => { drag.current = i; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); }} onDragEnd={() => { drag.current = -1; setDragOver(null); }}>⠿</span><span className="sd-tray-label">{i + 1}. {ref.kind === 'skill' ? 'Skill' : 'Prompt'}：{itemLabel(ref, library, skills)}{missing.has(refKey(ref)) && <small>（缺项，请移除或重新选择）</small>}</span><div className="sd-order"><Button size="sm" aria-label={`上移第 ${i+1} 项`} disabled={busy || i === 0} onClick={() => move(i, i-1)}>↑</Button><Button size="sm" aria-label={`下移第 ${i+1} 项`} disabled={busy || i === view.items.length-1} onClick={() => move(i, i+1)}>↓</Button><Button size="sm" aria-label={`移除第 ${i+1} 项`} disabled={busy} onClick={() => update({ items: view.items.filter((_, n) => n !== i) })}>×</Button></div>
         </li>)}</ol>}
-        <Button className="sd-inject" variant="primary" disabled={locked || loading || !!catalogError || !view.items.length || missing.size > 0 || phase !== 'plain'} onClick={injectItems}>{busy ? '正在处理…' : missing.size ? `请先修正 ${missing.size} 个缺项` : '追加到当前对话输入框'}</Button>
+        <Button className="sd-inject" variant="primary" disabled={!!disabledReason} title={phase !== 'plain' ? `输入框${phaseLabel(phase)}，此时不能写入` : undefined} onClick={injectItems}>{busy ? '正在处理…' : missing.size ? `请先修正 ${missing.size} 个缺项` : loading ? '追加（读取中…）' : '追加到当前对话输入框'}</Button>
+        {!!disabledReason && <p className="sd-hint sd-reason">{disabledReason}</p>}
       </footer>
     </div>;
   }

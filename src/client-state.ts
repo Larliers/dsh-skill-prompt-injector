@@ -1,5 +1,5 @@
 import type { ItemRef, LibraryState } from './model.js';
-export interface ViewState { tab: 'skills' | 'prompts'; query: string; tag: string; favorites: boolean; items: ItemRef[]; collapsed: boolean; combinationId?: string }
+export interface ViewState { tab: 'skills' | 'prompts' | 'global'; query: string; tag: string; favorites: boolean; items: ItemRef[]; collapsed: boolean; combinationId?: string }
 export function observable<T>(initial: T) {
   let value = initial; const listeners = new Set<() => void>();
   return { getSnapshot: () => value, subscribe: (listener: () => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; }, set: (next: T) => { value = next; for (const listener of listeners) listener(); } };

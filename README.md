@@ -11,6 +11,7 @@
 - **Skills catalog** — mirrors the live DSH skill registry of the current session (workspace and agent-preset aware), with search across name, description, body and tags.
 - **Prompts** — create, edit and delete your own reusable snippets.
 - **Tags & favorites** — both entry kinds can be favorited and tagged locally.
+- **Global injection** — pin skills and prompts as always-on context: the host registers them as a system-prompt section, so every new conversation starts with them and edits apply on the next request.
 - **Combinations** — save a named set of skills + prompts, load it later, rename it, or update it in place. Combinations always reference the latest prompt body.
 - **One-click inject** — appends the selection to the current composer as plain text, keeping your draft, references and attachments; `Ctrl+Z` undoes the insertion in one step.
 - **Never sends for you** — injection only fills the draft; you review and send.

@@ -62,6 +62,8 @@ export class JsonStorage {
         state.library.combinations = [...state.library.combinations.filter(c => c.id !== id), { ...change.combination, id, updatedAt: new Date().toISOString() }];
       } else if (change.type === 'combination.delete') {
         state.library.combinations = state.library.combinations.filter(c => c.id !== change.id);
+      } else if (change.type === 'global.save') {
+        state.library.global = change.global;
       }
       file.revision++;
       const name = isPrompt ? 'prompts.json' : 'library.json';
