@@ -4,7 +4,7 @@
 
 **Search, pin, combine and inject skills & prompts into the current conversation — from the DSH right sidebar.**
 
-![Skills & prompts injector](docs/screenshot.png)
+![Skills & prompts injector](docs/images/01-skills.png)
 
 ## Features
 
